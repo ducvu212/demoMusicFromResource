@@ -1,22 +1,31 @@
 package com.example.ducvu212.demomusicfromresource;
 
+import android.annotation.SuppressLint;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
 import android.support.v7.app.AppCompatActivity;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
-public class MainActivity extends AppCompatActivity {
+import java.util.concurrent.TimeUnit;
 
-    private MusicService mMusicService;
+public class MainActivity extends AppCompatActivity implements SeekBar.OnSeekBarChangeListener,
+        MusicService.updateUI {
+
+    private static final long TIME_DELAY_LOOP = 300;
+    private static final long TIME_UPDATE_SEEKBAR = 1000;
     private SeekBar mSeekBar;
-    private TextView mTimeRunning;
-    private TextView mTotalTime;
+    private TextView mTextViewTimeRunning;
+    private TextView mTextViewTotalTime;
     private boolean mIsConnect;
+    private Handler mHandler;
+    private int mPosition;
+    private MusicPlayer mMusicPlayer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,12 +48,13 @@ public class MainActivity extends AppCompatActivity {
 
     private void findViewByIds() {
         mSeekBar = findViewById(R.id.seekBar_time);
-        mTimeRunning = findViewById(R.id.textView_time_running);
-        mTotalTime = findViewById(R.id.textview_time_total);
+        mTextViewTimeRunning = findViewById(R.id.textView_time_running);
+        mTextViewTotalTime = findViewById(R.id.textview_time_total);
     }
 
     private void initComponents() {
-
+        mHandler = new Handler();
+        mSeekBar.setOnSeekBarChangeListener(this);
     }
 
     @Override
@@ -60,10 +70,10 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onServiceConnected(ComponentName componentName, IBinder iBinder) {
             MusicService.LocalBinder binder = (MusicService.LocalBinder) iBinder;
-            mMusicService = binder.getService();
+            MusicService mMusicService = binder.getService();
             if (mMusicService != null) {
                 mIsConnect = true;
-                mMusicService.updateSeekBar(mSeekBar, mTimeRunning, mTotalTime);
+                mMusicService.registerClient(MainActivity.this);
             }
         }
 
@@ -74,4 +84,62 @@ public class MainActivity extends AppCompatActivity {
         }
     };
 
+    private Runnable runnable = new Runnable() {
+        long timeRunning;
+
+        @SuppressLint({"DefaultLocale", "HandlerLeak"})
+        @Override
+        public void run() {
+            timeRunning = mMusicPlayer.getCurenPositionMusic();
+            mSeekBar.setProgress((int) timeRunning);
+            mTextViewTimeRunning.setText(String.format("%d min, %d second",
+                    TimeUnit.MILLISECONDS.toMinutes(timeRunning),
+                    TimeUnit.MILLISECONDS.toSeconds(timeRunning) -
+                            TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.
+                                    toMinutes(timeRunning))));
+            mHandler.postDelayed(this, TIME_UPDATE_SEEKBAR);
+        }
+    };
+
+    @Override
+    public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
+        mPosition = i;
+    }
+
+    @Override
+    public void onStartTrackingTouch(SeekBar seekBar) {
+
+    }
+
+    @SuppressLint("DefaultLocale")
+    @Override
+    public void onStopTrackingTouch(SeekBar seekBar) {
+        mTextViewTimeRunning.setText(String.format("%d min, %d second",
+                TimeUnit.MILLISECONDS.toMinutes((long) mPosition),
+                TimeUnit.MILLISECONDS.toSeconds((long) mPosition) -
+                        TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.
+                                toMinutes((long) mPosition))));
+        mMusicPlayer.seekToMusic(mPosition);
+    }
+
+    @SuppressLint("DefaultLocale")
+    public void updateSeekBar(SeekBar seekBar, TextView textViewRunning, TextView textViewTotal) {
+        mSeekBar = seekBar;
+        mTextViewTimeRunning = textViewRunning;
+        long totalTTime = mMusicPlayer.getDrurationMusic();
+        textViewTotal.setText(String.format("%d min, %d second",
+                TimeUnit.MILLISECONDS.toMinutes(totalTTime),
+                TimeUnit.MILLISECONDS.toSeconds(totalTTime) -
+                        TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.
+                                toMinutes(totalTTime))));
+        seekBar.setMax((int) mMusicPlayer.getDrurationMusic());
+        mHandler.postDelayed(runnable, TIME_DELAY_LOOP);
+        seekBar.setOnSeekBarChangeListener(this);
+    }
+
+    @Override
+    public void updateSeekBar(MusicPlayer musicPlayer) {
+        mMusicPlayer = musicPlayer;
+        updateSeekBar(mSeekBar, mTextViewTimeRunning, mTextViewTotalTime);
+    }
 }
